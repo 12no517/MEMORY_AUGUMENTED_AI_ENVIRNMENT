@@ -99,6 +99,30 @@ class DashboardStateTest(unittest.TestCase):
             self.assertIn("paneer", payload["result"]["answer"].lower())
             self.assertIn("saute onions", payload["result"]["answer"].lower())
 
+    def test_openenv_reset_returns_episode_payload(self) -> None:
+        state = DashboardState(default_episodes=6, seed=5)
+        payload = state.openenv_reset(episodes=6)
+        self.assertIn("state", payload)
+        self.assertEqual(payload["state"]["step_count"], 0)
+        self.assertFalse(payload["done"])
+        self.assertGreaterEqual(payload["state"]["episode_id"], 1)
+
+    def test_openenv_step_returns_observation_and_reward(self) -> None:
+        state = DashboardState(default_episodes=6, seed=5)
+        state.openenv_reset(episodes=6)
+        payload = state.openenv_step(
+            {
+                "query": "What is the recipe of paneer?",
+                "rating": 4,
+                "notes": "Use onions, tomatoes, and kasuri methi.",
+            }
+        )
+        self.assertIn("observation", payload)
+        self.assertIn("answer", payload["observation"])
+        self.assertIn("state", payload)
+        self.assertEqual(payload["state"]["step_count"], 1)
+        self.assertIn("feedback_applied", payload["info"])
+
 
 if __name__ == "__main__":
     unittest.main()

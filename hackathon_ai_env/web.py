@@ -253,6 +253,10 @@ class DashboardState:
         self.feedback_pending = False
         self.trained_episodes = 0
         self.memory_primed = False
+        self.openenv_episode_id = getattr(self, "openenv_episode_id", 0)
+        self.openenv_step_count = 0
+        self.openenv_done = False
+        self.openenv_last_reward = 0.0
 
     def _status_unlocked(self) -> dict[str, object]:
         return {
@@ -283,6 +287,182 @@ class DashboardState:
             ),
             "training_timeline": _serialize_training_timeline(self.training_summaries),
         }
+
+    def _openenv_state_snapshot_unlocked(self) -> dict[str, object]:
+        return {
+            "episode_id": self.openenv_episode_id,
+            "step_count": self.openenv_step_count,
+            "done": self.openenv_done,
+            "trained": self.trained_episodes > 0,
+            "trained_episodes": self.trained_episodes,
+            "feedback_pending": self.feedback_pending,
+            "q_state_count": len(self.env.q_controller.q_table),
+            "memory_count": len(self.env.memory.records),
+            "last_reward": round(self.openenv_last_reward, 4),
+            "last_query": self.last_inference.query if self.last_inference is not None else None,
+            "last_agent": self.last_inference.final_agent if self.last_inference is not None else None,
+            "last_state_key": self.last_inference.state_key if self.last_inference is not None else None,
+        }
+
+    def openenv_metadata(self) -> dict[str, object]:
+        with self.lock:
+            return {
+                "name": "memory_augmented_ai_environment",
+                "version": "0.1.0",
+                "description": (
+                    "Multi-agent reinforcement-learning environment with routing, "
+                    "memory recall, feedback-driven rewards, and a browser dashboard."
+                ),
+                "routes": {
+                    "reset": ["/reset", "/openenv/reset"],
+                    "step": ["/step", "/openenv/step"],
+                    "state": ["/state", "/openenv/state"],
+                    "health": ["/health", "/openenv/health"],
+                    "metadata": ["/metadata", "/openenv/metadata"],
+                },
+                "action_schema": {
+                    "query": "string",
+                    "warm_memory": "boolean, optional",
+                    "rating": "integer 1-5, optional",
+                    "notes": "string, optional",
+                    "episodes": "positive integer, optional",
+                },
+                "observation_schema": {
+                    "answer": "string",
+                    "final_agent": "string",
+                    "selected_agent": "string",
+                    "state_key": "string",
+                    "explanation": "string",
+                    "recalled_memory_keys": "string[]",
+                },
+            }
+
+    def openenv_health(self) -> dict[str, object]:
+        with self.lock:
+            return {
+                "status": "ok",
+                "service": "memory_augmented_ai_environment",
+                "trained": self.trained_episodes > 0,
+                "persistence_enabled": self.storage_path is not None,
+            }
+
+    def openenv_state(self) -> dict[str, object]:
+        with self.lock:
+            snapshot = self._openenv_state_snapshot_unlocked()
+            return {
+                "state": snapshot,
+                "observation": snapshot,
+                "info": {
+                    "feedback_pending": self.feedback_pending,
+                    "last_feedback": self.last_feedback,
+                },
+            }
+
+    def openenv_reset(self, episodes: int | None = None) -> dict[str, object]:
+        with self.lock:
+            self._ensure_trained_unlocked(episodes)
+            self._capture_user_context_unlocked()
+            self.env.reset_episode()
+            self._restore_user_context_unlocked()
+            self.last_inference = None
+            self.last_feedback = None
+            self.feedback_pending = False
+            self.last_evaluation = []
+            self.memory_primed = False
+            self.openenv_episode_id += 1
+            self.openenv_step_count = 0
+            self.openenv_done = False
+            self.openenv_last_reward = 0.0
+            self._write_persisted_state_unlocked()
+            state = self._openenv_state_snapshot_unlocked()
+            return {
+                "observation": {
+                    "message": "Environment reset and ready for a new episode.",
+                    "episode_id": self.openenv_episode_id,
+                },
+                "reward": 0.0,
+                "done": False,
+                "info": {
+                    "trained_episodes": self.trained_episodes,
+                    "memory_preserved": bool(self._persistent_user_records),
+                },
+                "state": state,
+            }
+
+    def openenv_step(self, payload: dict[str, object]) -> dict[str, object]:
+        raw_action = payload.get("action")
+        action = raw_action if isinstance(raw_action, dict) else payload
+        query = _first_text(
+            action,
+            ("query", "prompt", "message", "input", "task"),
+        )
+        if not query:
+            raise ValueError("step action must include query, prompt, message, input, or task")
+
+        warm_memory = _coerce_bool(_first_value(action, ("warm_memory", "warmMemory", "use_memory"), True))
+        raw_rating = _first_value(action, ("rating", "score", "feedback_rating"), None)
+        notes = _first_text(action, ("notes", "feedback", "comment"), "")
+        max_steps = _coerce_positive_int(_first_value(action, ("max_steps",), 4), 4)
+        episodes = _coerce_positive_int(_first_value(action, ("episodes",), self.default_episodes), self.default_episodes)
+
+        with self.lock:
+            self._ensure_trained_unlocked(episodes)
+            if self.openenv_episode_id == 0:
+                self.openenv_episode_id = 1
+            if warm_memory and not self.memory_primed:
+                self._capture_user_context_unlocked()
+                self.env.prime_memory(self.scenarios)
+                self._restore_user_context_unlocked()
+                self.memory_primed = True
+
+            self.last_inference = self.env.answer_query(query)
+            self._capture_user_context_unlocked()
+            self.feedback_pending = True
+            self.last_feedback = None
+
+            reward_total = 0.0
+            reward_payload = None
+            feedback_applied = False
+            if raw_rating not in (None, ""):
+                rating = _coerce_rating(raw_rating)
+                reward = self.env.apply_feedback(self.last_inference, rating, notes=notes)
+                self.feedback_pending = False
+                reward_total = reward.total
+                reward_payload = _serialize_feedback_reward(reward)
+                self.last_feedback = {
+                    "query": self.last_inference.query,
+                    "rating": rating,
+                    "notes": notes.strip(),
+                    "reward": reward_payload,
+                }
+                feedback_applied = True
+
+            self.openenv_step_count += 1
+            self.openenv_last_reward = reward_total
+            self.openenv_done = self.openenv_step_count >= max_steps or feedback_applied
+            self._write_persisted_state_unlocked()
+
+            observation = {
+                "query": self.last_inference.query,
+                "answer": self.last_inference.answer,
+                "selected_agent": self.last_inference.action.selected_agent,
+                "final_agent": self.last_inference.final_agent,
+                "state_key": self.last_inference.state_key,
+                "explanation": self.last_inference.explanation,
+                "recalled_memory_keys": list(self.last_inference.recalled_memory_keys),
+                "inferred_keywords": list(self.last_inference.inferred_keywords),
+            }
+            return {
+                "observation": observation,
+                "reward": round(reward_total, 4),
+                "done": self.openenv_done,
+                "info": {
+                    "feedback_applied": feedback_applied,
+                    "feedback": reward_payload,
+                    "trace": self.last_inference.trace,
+                },
+                "state": self._openenv_state_snapshot_unlocked(),
+            }
 
     def _policy_snapshot_unlocked(self) -> dict[str, object]:
         q_table = [
@@ -436,6 +616,15 @@ class DashboardHandler(BaseHTTPRequestHandler):
         if route == "/api/status":
             self._send_json(HTTPStatus.OK, self.state.status())
             return
+        if route in {"/health", "/openenv/health"}:
+            self._send_json(HTTPStatus.OK, self.state.openenv_health())
+            return
+        if route in {"/metadata", "/openenv/metadata"}:
+            self._send_json(HTTPStatus.OK, self.state.openenv_metadata())
+            return
+        if route in {"/state", "/openenv/state"}:
+            self._send_json(HTTPStatus.OK, self.state.openenv_state())
+            return
         if route in {"/", "/index.html"}:
             self._send_asset("index.html")
             return
@@ -448,6 +637,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
         route = urlparse(self.path).path
         try:
             payload = self._read_json()
+            if route in {"/reset", "/openenv/reset"}:
+                self._send_json(
+                    HTTPStatus.OK,
+                    self.state.openenv_reset(
+                        _coerce_positive_int(payload.get("episodes"), self.state.default_episodes)
+                    ),
+                )
+                return
+            if route in {"/step", "/openenv/step"}:
+                self._send_json(HTTPStatus.OK, self.state.openenv_step(payload))
+                return
+            if route in {"/state", "/openenv/state"}:
+                self._send_json(HTTPStatus.OK, self.state.openenv_state())
+                return
             if route == "/api/reset":
                 self._send_json(HTTPStatus.OK, self.state.reset())
                 return
@@ -536,6 +739,35 @@ def _coerce_rating(raw_value: object) -> int:
     if value < 1 or value > 5:
         raise ValueError("rating must be between 1 and 5")
     return value
+
+
+def _coerce_bool(raw_value: object, default: bool = False) -> bool:
+    if raw_value in (None, ""):
+        return default
+    if isinstance(raw_value, bool):
+        return raw_value
+    if isinstance(raw_value, (int, float)):
+        return bool(raw_value)
+    value = str(raw_value).strip().lower()
+    if value in {"1", "true", "yes", "on"}:
+        return True
+    if value in {"0", "false", "no", "off"}:
+        return False
+    return default
+
+
+def _first_value(payload: dict[str, object], keys: tuple[str, ...], default: object = None) -> object:
+    for key in keys:
+        if key in payload:
+            return payload[key]
+    return default
+
+
+def _first_text(payload: dict[str, object], keys: tuple[str, ...], default: str = "") -> str:
+    value = _first_value(payload, keys, default)
+    if value is None:
+        return default
+    return str(value).strip()
 
 
 def serve_dashboard(host: str = "127.0.0.1", port: int = 8000, default_episodes: int = 40) -> None:
