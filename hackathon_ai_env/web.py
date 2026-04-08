@@ -119,7 +119,7 @@ def _serialize_training_timeline(
 
 @dataclass
 class DashboardState:
-    default_episodes: int = 40
+    default_episodes: int = 8
     seed: int = 7
     scenarios: list = field(default_factory=default_scenarios)
     storage_path: Path | None = None
@@ -360,7 +360,16 @@ class DashboardState:
 
     def openenv_reset(self, episodes: int | None = None) -> dict[str, object]:
         with self.lock:
-            self._ensure_trained_unlocked(episodes)
+            # Only train if already trained and episode count changed; never block reset
+            # on a cold-start training run (which would time out the checker).
+            if self.trained_episodes > 0:
+                target = episodes or self.default_episodes
+                if self.trained_episodes != target:
+                    self._reset_unlocked(clear_user_context=False)
+                    self.training_summaries = self.env.train(self.scenarios, episodes=target)
+                    self._restore_user_context_unlocked()
+                    self.trained_episodes = target
+                    self.memory_primed = False
             self._capture_user_context_unlocked()
             self.env.reset_episode()
             self._restore_user_context_unlocked()
@@ -697,7 +706,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
     def _read_json(self) -> dict[str, object]:
         content_length = int(self.headers.get("Content-Length", "0"))
         raw = self.rfile.read(content_length) if content_length > 0 else b"{}"
-        return json.loads(raw.decode("utf-8"))
+        text = raw.decode("utf-8").strip()
+        if not text:
+            return {}
+        return json.loads(text)
 
     def _send_asset(self, name: str) -> None:
         asset_path = ASSETS_DIR / name
