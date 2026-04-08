@@ -82,6 +82,38 @@ function setNotice(message, tone = "neutral") {
   elements.notice.className = `notice ${tone}`;
 }
 
+function syncNoticeWithStatus(status) {
+  const persistence = status.persistence || { enabled: false };
+  const memoryCount = Number(status.memory_snapshot?.count || 0);
+
+  if (status.feedback_pending) {
+    setNotice("The latest answer is waiting for your rating so the reward can update the policy.", "neutral");
+    return;
+  }
+
+  if (status.last_feedback) {
+    setNotice(
+      persistence.enabled
+        ? "Restored a saved session. The latest rated answer and learned state are loaded."
+        : "The latest answer has already been rated and written back into the policy.",
+      "success"
+    );
+    return;
+  }
+
+  if (status.trained || status.q_state_count > 0 || memoryCount > 0) {
+    setNotice(
+      persistence.enabled
+        ? "Restored a saved session. You can keep training, ask a query, or reset the environment."
+        : "The policy is ready. Train again, ask a query, or run evaluation.",
+      "success"
+    );
+    return;
+  }
+
+  setNotice("Waiting for your first action.", "neutral");
+}
+
 function setBusy(button, busyLabel) {
   const originalLabel = button.textContent;
   button.disabled = true;
@@ -264,6 +296,7 @@ function renderStatus(status) {
   renderPolicy(status.policy || { q_table: [], memory_bank: [] });
   renderFeedbackStatus(status);
   renderSessionSummary(status);
+  syncNoticeWithStatus(status);
   state.latestInference = status.last_inference || null;
   state.trainingTimeline = status.training_timeline || [];
   renderLatestAnswer(state.latestInference);
