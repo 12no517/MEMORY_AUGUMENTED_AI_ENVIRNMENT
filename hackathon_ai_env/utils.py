@@ -537,7 +537,8 @@ def extract_kitchen_constraints(text: str) -> tuple[str, ...]:
                 noun = r"\s+".join(re.escape(token) for token in alias_tokens[split_index:])
                 pattern = rf"\b{prefix}\s+(?:a\s+|an\s+)?{noun}\b"
             else:
-                pattern = rf"\b{r'\s+'.join(re.escape(token) for token in alias_tokens)}\b"
+                joined_tokens = r"\s+".join(re.escape(token) for token in alias_tokens)
+                pattern = rf"\b{joined_tokens}\b"
 
             if pattern and re.search(pattern, normalized):
                 matched = True
