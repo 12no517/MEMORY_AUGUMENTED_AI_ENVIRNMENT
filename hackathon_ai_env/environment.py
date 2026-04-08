@@ -12,6 +12,7 @@ from .reward import DeterministicRewardNode, UserFeedbackRewardNode
 from .state import StateEncoder
 from .utils import parse_memory_sharing_preferences, tokenize
 from .conflict import ConflictResolutionNode
+from .llm_client import llm_enhance
 
 
 class HackathonAIEnvironment:
@@ -385,6 +386,8 @@ class HackathonAIEnvironment:
         final_agent, final_proposal = self._resolve_final_agent(action, fusion, proposals)
         final_recalled = proposal_memory.get(final_agent, recalled)
         answer = final_proposal.render(action.use_memory)
+        # Enhance via LLM proxy (uses API_BASE_URL / API_KEY env vars)
+        answer = llm_enhance(query, answer, final_agent)
         if action.use_memory and final_recalled:
             self.memory.mark_access(final_recalled)
 
