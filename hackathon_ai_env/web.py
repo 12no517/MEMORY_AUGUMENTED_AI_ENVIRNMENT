@@ -629,17 +629,29 @@ class DashboardState:
             else:
                 self.scenarios.append(new_scenario)
                 
-            self.feedback_pending = False
-            self.last_feedback = {
-                "query": self.last_inference.query,
+            saved_inference = self.last_inference
+            feedback_block = {
+                "query": saved_inference.query,
                 "rating": rating,
                 "notes": notes.strip(),
                 "reward": _serialize_feedback_reward(reward),
             }
             self._capture_user_context_unlocked()
+            
+            # Automatically train immediately upon feedback
+            self._reset_unlocked(clear_user_context=False)
+            self.training_summaries = self.env.train(self.scenarios, episodes=self.default_episodes)
+            self._restore_user_context_unlocked()
+            self.trained_episodes = self.default_episodes
+            self.memory_primed = False
+
+            self.last_inference = saved_inference
+            self.last_feedback = feedback_block
+            self.feedback_pending = False
+            
             self._write_persisted_state_unlocked()
             return {
-                "message": "Feedback recorded. Reward updated from your rating and fed back into the policy.",
+                "message": "Feedback recorded and environment automatically trained from it.",
                 "status": self._status_unlocked(),
                 "feedback": self.last_feedback,
             }
