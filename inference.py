@@ -57,25 +57,12 @@ def run_remote(base_url: str) -> dict[str, Any]:
     for index, item in enumerate(queries, start=1):
         result = _request_json("POST", f"{base}/step", item)
         steps.append(result)
-        score = float(max(0.01, min(0.99, float(result["reward"]))))
+        score = round(float(max(0.01, min(0.99, float(result["reward"])))), 2)
+        reward_val = round(float(result["reward"]), 2)
         task_name = item["query"]
         print(f"[START] task={task_name}", flush=True)
-        print(f"[STEP] step=1 reward={result['reward']}", flush=True)
+        print(f"[STEP] step=1 reward={reward_val}", flush=True)
         print(f"[END] task={task_name} score={score} steps=1", flush=True)
-        print(
-            json.dumps(
-                {
-                    "step": index,
-                    "task": task_name,
-                    "grader": "OpenEnv Grader",
-                    "score": score,
-                    "agent": result["observation"]["final_agent"],
-                    "reward": result["reward"],
-                    "done": result["done"],
-                }
-            ),
-            flush=True
-        )
 
     summary = {
         "mode": "remote",
@@ -121,10 +108,11 @@ def run_local() -> dict[str, Any]:
     for index, item in enumerate(queries, start=1):
         inference = env.answer_query(item["query"])
         reward = env.apply_feedback(inference, item["rating"], item["notes"])
-        score = float(max(0.01, min(0.99, float(reward.total))))
+        score = round(float(max(0.01, min(0.99, float(reward.total)))), 2)
+        reward_val = round(float(reward.total), 2)
         task_name = item["query"]
         print(f"[START] task={task_name}", flush=True)
-        print(f"[STEP] step=1 reward={reward.total}", flush=True)
+        print(f"[STEP] step=1 reward={reward_val}", flush=True)
         print(f"[END] task={task_name} score={score} steps=1", flush=True)
         step = {
             "step": index,
@@ -137,7 +125,6 @@ def run_local() -> dict[str, Any]:
             "state_key": inference.state_key,
         }
         results.append(step)
-        print(json.dumps(step), flush=True)
 
     summary = {
         "mode": "local",
