@@ -44,15 +44,15 @@ def run_remote(base_url: str) -> dict[str, Any]:
         },
     ]
 
-    print("[START] Remote OpenEnv inference")
+    # print("[START] Remote OpenEnv inference")
     reset_result = _request_json("POST", f"{base}/reset", {"episodes": 8})
-    print(json.dumps({"reset": reset_result["state"]}, indent=2))
+    # print(json.dumps({"reset": reset_result["state"]}))
 
     steps: list[dict[str, Any]] = []
     for index, item in enumerate(queries, start=1):
         result = _request_json("POST", f"{base}/step", item)
         steps.append(result)
-        score = max(0.001, min(0.999, float(result["reward"])))
+        score = float(max(0.01, min(0.99, float(result["reward"]))))
         print(
             json.dumps(
                 {
@@ -63,8 +63,7 @@ def run_remote(base_url: str) -> dict[str, Any]:
                     "agent": result["observation"]["final_agent"],
                     "reward": result["reward"],
                     "done": result["done"],
-                },
-                indent=2,
+                }
             )
         )
 
@@ -75,7 +74,7 @@ def run_remote(base_url: str) -> dict[str, Any]:
         "total_reward": round(sum(step["reward"] for step in steps), 4),
         "final_state": steps[-1]["state"] if steps else reset_result["state"],
     }
-    print("[END] Remote OpenEnv inference")
+    # print("[END] Remote OpenEnv inference")
     return summary
 
 
@@ -102,12 +101,12 @@ def run_local() -> dict[str, Any]:
         },
     ]
 
-    print("[START] Local inference")
+    # print("[START] Local inference")
     results: list[dict[str, Any]] = []
     for index, item in enumerate(queries, start=1):
         inference = env.answer_query(item["query"])
         reward = env.apply_feedback(inference, item["rating"], item["notes"])
-        score = max(0.001, min(0.999, float(reward.total)))
+        score = float(max(0.01, min(0.99, float(reward.total))))
         step = {
             "step": index,
             "task": item["query"],
@@ -119,7 +118,7 @@ def run_local() -> dict[str, Any]:
             "state_key": inference.state_key,
         }
         results.append(step)
-        print(json.dumps(step, indent=2))
+        print(json.dumps(step))
 
     summary = {
         "mode": "local",
@@ -127,7 +126,7 @@ def run_local() -> dict[str, Any]:
         "total_reward": round(sum(item["reward"] for item in results), 4),
         "last_state_key": results[-1]["state_key"] if results else None,
     }
-    print("[END] Local inference")
+    # print("[END] Local inference")
     return summary
 
 
@@ -138,7 +137,7 @@ def main() -> None:
     except (HTTPError, URLError, TimeoutError) as exc:
         print(json.dumps({"remote_error": str(exc), "fallback": "local"}, indent=2))
         summary = run_local()
-    print(json.dumps(summary, indent=2))
+    # print(json.dumps(summary))
 
 
 if __name__ == "__main__":
