@@ -448,6 +448,7 @@ class HackathonAIEnvironment:
             answer=inference.answer,
             final_domain=inference.final_agent,
             reward=reward.total,
+            is_user_provided=True,
         )
         if notes.strip():
             self.memory.remember_memory_sharing(notes)

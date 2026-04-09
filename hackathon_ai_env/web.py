@@ -151,7 +151,7 @@ class DashboardState:
         self._persistent_user_records = {
             key: deepcopy(record)
             for key, record in self.env.memory.records.items()
-            if key.startswith(prefixes)
+            if key.startswith(prefixes) or record.is_user_provided
         }
         self._persistent_sharing_rules = {
             source: set(targets)

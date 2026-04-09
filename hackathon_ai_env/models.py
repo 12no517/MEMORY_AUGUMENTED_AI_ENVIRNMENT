@@ -24,6 +24,7 @@ class MemoryRecord:
     accesses: int = 0
     vector: tuple[float, ...] = field(default_factory=tuple)
     updated_at: float = 0.0
+    is_user_provided: bool = False
 
 
 @dataclass(frozen=True)

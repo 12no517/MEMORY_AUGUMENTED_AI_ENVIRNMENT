@@ -69,6 +69,7 @@ class SharedKnowledgeSpace:
                     "accesses": record.accesses,
                     "vector": list(record.vector),
                     "updated_at": record.updated_at,
+                    "is_user_provided": record.is_user_provided,
                 }
             )
         return {
@@ -110,6 +111,7 @@ class SharedKnowledgeSpace:
                     accesses=int(item.get("accesses", 0)),
                     vector=tuple(float(value) for value in item.get("vector", [])),
                     updated_at=float(item.get("updated_at", 0.0)),
+                    is_user_provided=bool(item.get("is_user_provided", False)),
                 )
                 self.records[record.key] = record
 
@@ -252,6 +254,7 @@ class SharedKnowledgeSpace:
         answer: str,
         final_domain: str,
         reward: float,
+        is_user_provided: bool = False,
     ) -> MemoryRecord:
         self.step += 1
         answer_tokens = tokenize(answer)
@@ -271,6 +274,8 @@ class SharedKnowledgeSpace:
             record.last_step = self.step
             record.vector = new_vector
             record.updated_at = timestamp
+            if is_user_provided:
+                record.is_user_provided = True
             return record
 
         record = MemoryRecord(
@@ -283,6 +288,7 @@ class SharedKnowledgeSpace:
             last_step=self.step,
             vector=new_vector,
             updated_at=timestamp,
+            is_user_provided=is_user_provided,
         )
         self.records[record_key] = record
         return record
