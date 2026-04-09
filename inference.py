@@ -37,6 +37,11 @@ def run_remote(base_url: str) -> dict[str, Any]:
             "rating": 5,
             "notes": "Use onions, tomatoes, ginger-garlic paste, and finish with kasuri methi.",
         },
+        {
+            "query": "Write a python script to parse a CSV.",
+            "rating": 5,
+            "notes": "Provide clean python code.",
+        },
     ]
 
     print("[START] Remote OpenEnv inference")
@@ -47,10 +52,14 @@ def run_remote(base_url: str) -> dict[str, Any]:
     for index, item in enumerate(queries, start=1):
         result = _request_json("POST", f"{base}/step", item)
         steps.append(result)
+        score = max(0.001, min(0.999, float(result["reward"])))
         print(
             json.dumps(
                 {
                     "step": index,
+                    "task": item["query"],
+                    "grader": "OpenEnv Grader",
+                    "score": score,
                     "agent": result["observation"]["final_agent"],
                     "reward": result["reward"],
                     "done": result["done"],
@@ -86,6 +95,11 @@ def run_local() -> dict[str, Any]:
             "rating": 5,
             "notes": "Use onions, tomatoes, ginger-garlic paste, and finish with kasuri methi.",
         },
+        {
+            "query": "Write a python script to parse a CSV.",
+            "rating": 5,
+            "notes": "Provide clean python code.",
+        },
     ]
 
     print("[START] Local inference")
@@ -93,8 +107,12 @@ def run_local() -> dict[str, Any]:
     for index, item in enumerate(queries, start=1):
         inference = env.answer_query(item["query"])
         reward = env.apply_feedback(inference, item["rating"], item["notes"])
+        score = max(0.001, min(0.999, float(reward.total)))
         step = {
             "step": index,
+            "task": item["query"],
+            "grader": "OpenEnv Grader",
+            "score": score,
             "query": item["query"],
             "agent": inference.final_agent,
             "reward": reward.total,
