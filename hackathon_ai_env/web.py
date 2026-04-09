@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from .environment import HackathonAIEnvironment
 from .live_knowledge import InternetKnowledgeRetriever
-from .models import EpisodeSummary, FeedbackReward, InferenceResult, StepResult
+from .models import EpisodeSummary, FeedbackReward, InferenceResult, StepResult, QueryScenario
 from .scenarios import default_scenarios
 
 ASSETS_DIR = Path(__file__).with_name("web_assets")
@@ -176,6 +176,7 @@ class DashboardState:
             "q_learning": self.env.q_controller.to_dict(),
             "memory": self.env.memory.to_dict(),
             "audit_log": self.env.audit_log[-120:],
+            "scenarios": [asdict(s) for s in self.scenarios],
         }
 
     def _write_persisted_state_unlocked(self) -> None:
@@ -198,6 +199,19 @@ class DashboardState:
             return
         if not isinstance(payload, dict):
             return
+
+        raw_scenarios = payload.get("scenarios")
+        if isinstance(raw_scenarios, list):
+            self.scenarios = []
+            for s in raw_scenarios:
+                if isinstance(s, dict):
+                    self.scenarios.append(QueryScenario(
+                        query=s.get("query", ""),
+                        expected_domain=s.get("expected_domain", ""),
+                        expected_keywords=tuple(s.get("expected_keywords", [])),
+                        requires_memory=bool(s.get("requires_memory", False)),
+                        description=s.get("description", "")
+                    ))
 
         raw_q_learning = payload.get("q_learning", {})
         if isinstance(raw_q_learning, dict):
@@ -601,6 +615,20 @@ class DashboardState:
             if self.last_inference is None or not self.feedback_pending:
                 raise ValueError("Ask a query first, then submit feedback for that answer.")
             reward = self.env.apply_feedback(self.last_inference, rating, notes=notes)
+            
+            new_scenario = QueryScenario(
+                query=self.last_inference.query,
+                expected_domain=self.last_inference.final_agent,
+                expected_keywords=self.last_inference.inferred_keywords,
+                requires_memory=bool(self.last_inference.recalled_memory_keys),
+                description=f"User feedback note: {notes.strip()}"
+            )
+            existing_idx = next((i for i, s in enumerate(self.scenarios) if s.query == new_scenario.query), None)
+            if existing_idx is not None:
+                self.scenarios[existing_idx] = new_scenario
+            else:
+                self.scenarios.append(new_scenario)
+                
             self.feedback_pending = False
             self.last_feedback = {
                 "query": self.last_inference.query,
