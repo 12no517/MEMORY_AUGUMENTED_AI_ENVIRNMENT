@@ -42,10 +42,15 @@ def run_remote(base_url: str) -> dict[str, Any]:
             "rating": 5,
             "notes": "Provide clean python code.",
         },
+        {
+            "query": "What are the common risks in a seed-stage startup?",
+            "rating": 4,
+            "notes": "Focus on market and team risks.",
+        },
     ]
 
     # print("[START] Remote OpenEnv inference")
-    reset_result = _request_json("POST", f"{base}/reset", {"episodes": 8})
+    reset_result = _request_json("POST", f"{base}/reset", {"episodes": 1})
     # print(json.dumps({"reset": reset_result["state"]}))
 
     steps: list[dict[str, Any]] = []
@@ -81,7 +86,7 @@ def run_remote(base_url: str) -> dict[str, Any]:
 def run_local() -> dict[str, Any]:
     env = HackathonAIEnvironment(seed=7, knowledge_retriever=InternetKnowledgeRetriever())
     scenarios = default_scenarios()
-    env.train(scenarios, episodes=8)
+    env.train(scenarios, episodes=1)
 
     queries = [
         {
@@ -98,6 +103,11 @@ def run_local() -> dict[str, Any]:
             "query": "Write a python script to parse a CSV.",
             "rating": 5,
             "notes": "Provide clean python code.",
+        },
+        {
+            "query": "What are the common risks in a seed-stage startup?",
+            "rating": 4,
+            "notes": "Focus on market and team risks.",
         },
     ]
 
